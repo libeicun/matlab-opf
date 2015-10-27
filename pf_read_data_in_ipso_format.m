@@ -1,4 +1,4 @@
-function [Y,S,U2,N,BLNodes,PQNodes,PVNodes,precision,maxIterTimes] = pf_read_data_in_ipso_format(fileName)
+function [Y,P,QAndU2,U,N,BLNodes,PQNodes,PVNodes,precision,maxIterTimes] = pf_read_data_in_ipso_format(filePath)
 N     = 5;
 BLNodes = [1];
 PVNodes = [];
@@ -17,7 +17,9 @@ S = [
     -0.4000-0.0500i;
     -0.6000-0.1000i;
 ];
-U2 = [];
+P = real(S);
+QAndU2 = imag(S);
+U = [];
 precision = 0.00001;
 maxIterTimes = 30;
 

@@ -1,36 +1,63 @@
-function [U,S] = pf(srcFile,  algorithmOptions, outputOptions)
+function [errCode,iterTimes,N,U,fy,S] = pf(srcFile,  algorithmOptions, outputOptions)
+% param 
+%     srcFile           path of the file that contains necessary source data.
+%     algorithmOptions  a list, options specified for settings of used algrothm. 
+%     outputOptions     a list, options specified for settings of how the results will be export. 
+% return
+%     errCode           a code indicating whether the calculation works. 0 - success, 1 - not converged, else - unknown error.
+%                       and N, U, fy, and S are valid only if errCode == 0.
+%     iterTimes         number of iterations.
+%     N                 amount of nodes.  
+%     U                 a vector, the amplitude of voltages of all nodes.
+%     fy                a vector, the angle of volatages of all nodes.
+%     S                 a complexity vector, powers of all nodes, where every element in forms like P + Qi, where P is active power and Q is reactive power.
 
-%读取源数据并构造特定数据结构。
-[Y,S,U2,N,BLNodes,PQNodes,PVNodes,precision,maxIterTimes] = pf_read_data_in_ipso_format(srcFile);
-%确认当前程序支持源数据的所有特性。
-isValid = pf_validate(Y,S,U2,N,BLNodes,PQNodes,PVNodes,precision,maxIterTimes);
-if (isValid == 0)
-    fprintf('The input datas are invalid, please check them and try again.');return;
+% Reset the error flag.
+errCode = 0;
+
+% Read the source data and build data structures needed to process.
+[Y,P,QAndU2,BLVoltage,U,N,BLNodes,PQNodes,PVNodes,precision,maxIterTimes] = pf_mock_ieee1047();
+
+% See if all properties of the source data are supported by current version.
+if (~pf_validate(Y,P,QAndU2,U,N,BLNodes,PQNodes,PVNodes,precision,maxIterTimes))
+    errCode = 2;return;
 end
-%设置迭代变量的初始值。
-fe = pf_set_init_values(N,1.05,1.06,PQNodes,PVNodes,BLNodes);
-%使用迭代计数器。
-currentIteration = 0;
+
+% Set the initial values of iteration variables.
+fe = pf_set_init_values(N,1.0000,U,BLVoltage,PQNodes,PVNodes,BLNodes);
+
+% Use an iteration counter.
+iterTimes = 0;
+
 while (1)
-    currentIteration = currentIteration + 1;
-    %迭代次数判断。
-    if(currentIteration > maxIterTimes)
-        fprintf('Exit after %d iterations WITHOUT converge.\n',currentIteration - 1);break;
+    iterTimes = iterTimes + 1;
+    
+    % See if the iteration counter exceeds the specified max value.
+    if(iterTimes > maxIterTimes)
+        errCode = 1;return;
     end
-    %构造雅各比矩阵。
-    J = pf_build_jacobi_matrix(N,PQNodes,PVNodes,BLNodes,S,Y,fe);
-    %计算不平衡量。
-    deltaPQ = pf_calc_delta(N,PQNodes,PVNodes,BLNodes,S,Y,fe);
-    %解修正方程式，得迭代增量。
+    
+    % Contruct the Jacobian Matrix.
+    J = pf_build_jacobi_matrix(N,PQNodes,PVNodes,BLNodes,P,QAndU2,Y,fe);
+    
+    % Caculate the unblance of power.
+    deltaPQ = pf_calc_delta(N,PQNodes,PVNodes,BLNodes,P,QAndU2,Y,fe);
+    
+    % Solve the correction equations.
     deltafe = J\deltaPQ;
-    %收敛判断。
-    if(pf_near_zero(deltafe,precision))
-        fprintf('Converge after %d iterations.\n',currentIteration);break;
+    
+    % See if the iteration converges.
+    if(common_all_near_zero(deltafe,precision))
+        break;
     end
-    %计算最优乘子。
+    
+    % Calculate the optimal multiplier/step.
     mu = pf_optimal_multiplier(fe,deltafe);
-    %更新迭代变量。
+    
+    % Update the iteration variables.
     fe = fe + mu*deltafe;
 end
-U = fe(1:N,1) + i*fe(N+1:N+N,1);
-S = [];
+
+% Calculate the node powers.
+[U,fy,S,u,l] = pf_build_node_datas(fe,Y,N);
+
