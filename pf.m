@@ -1,63 +1,105 @@
-function [errCode,iterTimes,N,U,fy,S] = pf(srcFile,  algorithmOptions, outputOptions)
-% param 
-%     srcFile           path of the file that contains necessary source data.
-%     algorithmOptions  a list, options specified for settings of used algrothm. 
-%     outputOptions     a list, options specified for settings of how the results will be export. 
-% return
-%     errCode           a code indicating whether the calculation works. 0 - success, 1 - not converged, else - unknown error.
-%                       and N, U, fy, and S are valid only if errCode == 0.
-%     iterTimes         number of iterations.
-%     N                 amount of nodes.  
-%     U                 a vector, the amplitude of voltages of all nodes.
-%     fy                a vector, the angle of volatages of all nodes.
-%     S                 a complexity vector, powers of all nodes, where every element in forms like P + Qi, where P is active power and Q is reactive power.
+%========================================================================================================================%
+%                                                      pf.m                                                              %
+%________________________________________________________________________________________________________________________%
+%                                                                                                                        %
+%  李倍存 创建于 2015-10-22 21:19。电邮 li.beicun@foxmail.com。                                                          %
+%________________________________________________________________________________________________________________________%
+%                                                                                                                        %
+%  (C) 版权所有 2015- ，李倍存及iPso。                                                                                   %
+%  对该文件所包含的代码的正确性、执行效率等任何方面不作任何保证。                                                        %
+%  任何个人和组织均可不受约束地将该文件所包含的代码用于非商业用途。                                                      %
+%  若需要将其用于商业软件的开发，请首先联系所有者以取得许可。                                                            %
+%========================================================================================================================%
 
-% Reset the error flag.
-errCode = 0;
-
-% Read the source data and build data structures needed to process.
-[Y,P,QAndU2,BLVoltage,U,N,BLNodes,PQNodes,PVNodes,precision,maxIterTimes] = pf_mock_ieee1047();
-
-% See if all properties of the source data are supported by current version.
-if (~pf_validate(Y,P,QAndU2,U,N,BLNodes,PQNodes,PVNodes,precision,maxIterTimes))
-    errCode = 2;return;
-end
-
-% Set the initial values of iteration variables.
-fe = pf_set_init_values(N,1.0000,U,BLVoltage,PQNodes,PVNodes,BLNodes);
-
-% Use an iteration counter.
-iterTimes = 0;
-
-while (1)
-    iterTimes = iterTimes + 1;
+function [errCode, iterTimes, N, U, fy, S] = pf(srcFilePath, options, hCallback)
     
-    % See if the iteration counter exceeds the specified max value.
-    if(iterTimes > maxIterTimes)
-        errCode = 1;return;
+%========================================================================================================================%    
+%                                                                                                                        %
+%                                       使用牛顿-拉夫逊法，执行一次稳态潮流计算。                                        %
+%                                                                                                                        %
+%========================================================================================================================%
+%                          |          |                                                                                  %
+%        srcFilePath       | string   | 包含必要源数据的文本文件的绝对或相对路径。                                       %
+%      __________________________________________________________________________________________________________________%
+%  参                      |          |                                                                                  %
+%        options           | vector   | 指定算法选项（未使用）。                                                         %
+%  数  __________________________________________________________________________________________________________________%
+%      　　　　　　　　    |          |                                                                                  %
+%        hCallback         | handle   | 指定回调函数，在每一次迭代结束后被调用。                                         %
+%                          |          | 回调函数格式为：function callback(iter)，iter为当前迭代次数。                    %
+%========================================================================================================================%
+%                          |          |                                                                                  %
+%                          |          | 错误代码，指出该函数是否正确返回。_______________________________________        %
+%                          |          |                   ________________| 0        - 正常返回                 /        %
+%        errCode           | integer  |                   |错误代码含义     1        - 超出指定迭代次数未收敛  /         %                            
+%                          |          |                   |_______________  其它数值 - 发生未知错误（未使用） /          %                              
+%                          |          |                                   |__________________________________/           %
+%                          |          | 除非 errCode == 0，否则 ：N, U, fy 及 S 为无效返回值，iterTimes为最大迭代次数。  %                           
+%  返  __________________________________________________________________________________________________________________%
+%                          |          |                                                                                  %
+%        iterTimes         | interger | 实际迭代次数。                                                                   %
+%  回  __________________________________________________________________________________________________________________%
+%                          |          |                                                                                  %
+%        N                 | interger | 总节点数目。                                                                     %
+%  值  __________________________________________________________________________________________________________________%
+%                          |          |                                          |                                       %                       
+%        U                 | vector   | 所有节点的电压幅值（标幺值）。           |\                                      %
+%      __________________________________________________________________________| \                                     %
+%                          |          |                                          |  \                                    %
+%        fy                | vector   | 所有节点的电压相角（标幺值）。           |---    数值列表按节点编号顺序。        %
+%      __________________________________________________________________________|  /                                    %
+%                          |          |                                          | /                                     %
+%        S                 | vector   | 所有节点的复功率（标幺值），形如 P + Qi。|/                                      %
+%========================================================================================================================%
+
+%% 初始化。
+    % 复位错误代码。
+    errCode = 0;
+    % 读取源数据文件并构造所需数据结构。
+    [Y, P, QAndU2, BLVoltage, U, N, BLNodes, PQNodes, PVNodes, precision, maxIterTimes] = pf_mock_ieee1047();
+    % 检查是否所有源数据特性均受当前版本支持。
+    if (~pf_validate(Y, P, QAndU2, U, N, BLNodes, PQNodes, PVNodes, precision, maxIterTimes))
+        errCode = 2; return;
     end
-    
-    % Contruct the Jacobian Matrix.
-    J = pf_build_jacobi_matrix(N,PQNodes,PVNodes,BLNodes,P,QAndU2,Y,fe);
-    
-    % Caculate the unblance of power.
-    deltaPQ = pf_calc_delta(N,PQNodes,PVNodes,BLNodes,P,QAndU2,Y,fe);
-    
-    % Solve the correction equations.
-    deltafe = J\deltaPQ;
-    
-    % See if the iteration converges.
-    if(common_all_near_zero(deltafe,precision))
-        break;
-    end
-    
-    % Calculate the optimal multiplier/step.
-    mu = pf_optimal_multiplier(fe,deltafe);
-    
-    % Update the iteration variables.
-    fe = fe + mu*deltafe;
-end
+    % 设置迭代变量初值。
+    fe = pf_set_init_values(N, 1.0000, U, BLVoltage, PQNodes, PVNodes, BLNodes);
 
-% Calculate the node powers.
-[U,fy,S,u,l] = pf_build_node_datas(fe,Y,N);
+%% 迭代。
+    % 使用迭代计数器。
+    iterTimes = 0;
+    while (1)
+        iterTimes = iterTimes + 1;
+        
+        % 若迭代次数超出指定最大值，返回错误（1）。
+        if(iterTimes > maxIterTimes)
+            errCode = 1; return;
+        end
+        
+        % 构造雅各比矩阵。
+        J       = pf_build_jacobi_matrix(N, PQNodes, PVNodes, BLNodes, P, QAndU2, Y, fe);
+        % 计算不平衡量。
+        deltaPQ = pf_calc_delta(N, PQNodes, PVNodes, BLNodes, P, QAndU2, Y, fe);
+        % 求解修正方程组。
+        deltafe = J\deltaPQ;
+        
+        % 若满足收敛条件，结束迭代。
+        if(common_all_near_zero(deltafe, precision))
+            break;
+        end
+        
+        % 计算最优乘子。
+        mu = pf_optimal_multiplier(fe, deltafe);
+        % 更新迭代变量。
+        fe = fe + mu*deltafe;
+
+        % 若定义了回调函数，发送通知。
+        if(hCallback)
+            hCallback(iterTimes);
+        end
+    end
+
+    % 计算节点功率和电压。
+    [U, fy, S, u, l] = pf_build_node_datas(fe, Y, N);
+
+end
 
