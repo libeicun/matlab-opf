@@ -11,7 +11,7 @@
 %  若需要将其用于商业软件的开发，请首先联系所有者以取得许可。                                                            %
 %========================================================================================================================%
 
-function [errCode, iterTimes, N, U, fy, S] = pf(srcFilePath, options, hCallback)
+function [err, iterTimes, N, U, fy, S] = pf(srcFilePath, options, hCallbackBeforePerIteration, hCallbackAfterPerIteration)
     
 %========================================================================================================================%    
 %                                                                                                                        %
@@ -23,18 +23,26 @@ function [errCode, iterTimes, N, U, fy, S] = pf(srcFilePath, options, hCallback)
 %      __________________________________________________________________________________________________________________%
 %  参                      |          |                                                                                  %
 %        options           | vector   | 指定算法选项（未使用）。                                                         %
+%      __________________________________________________________________________________________________________________%
+%      　　　　　　　　    |          |                                                                                  %
+%        hCallbackBeforePerIteration  | 指定回调函数，在每一次迭代开始前被调用。                                         %
+%                          | handle   | 回调函数格式为：function callback(iter)，iter为当前迭代次数。                    %
 %  数  __________________________________________________________________________________________________________________%
 %      　　　　　　　　    |          |                                                                                  %
-%        hCallback         | handle   | 指定回调函数，在每一次迭代结束后被调用。                                         %
-%                          |          | 回调函数格式为：function callback(iter)，iter为当前迭代次数。                    %
+%        hCallbackAfterPerIteration   | 指定回调函数，在每一次迭代结束后被调用。                                         %
+%                          | handle   | 回调函数格式为：function callback(iter)，iter为当前迭代次数。                    %
 %========================================================================================================================%
 %                          |          |                                                                                  %
-%                          |          | 错误代码，指出该函数是否正确返回。_______________________________________        %
+%                          |          | 错误信息，指出该函数是否正确返回。_______________err域定义_______________        %
+%                          |          |                                      \ code     - 代码                           %
+%                          |          |                                       \ msg     - 提示信息                       %
+%                          |          |                                        \_source - 错误源_________________________%
+%                          |          |                                   _______________________________________        %
 %                          |          |                   ________________| 0        - 正常返回                 /        %
-%        errCode           | integer  |                   |错误代码含义     1        - 超出指定迭代次数未收敛  /         %                            
+%        err               | struct   |                   |err.code含义     1        - 超出指定迭代次数未收敛  /         %                            
 %                          |          |                   |_______________  其它数值 - 发生未知错误（未使用） /          %                              
 %                          |          |                                   |__________________________________/           %
-%                          |          | 除非 errCode == 0，否则 ：N, U, fy 及 S 为无效返回值，iterTimes为最大迭代次数。  %                           
+%                          |          | 除非 err == {}，否则 ：N, U, fy 及 S 为无效返回值，iterTimes为最大迭代次数。     %                           
 %  返  __________________________________________________________________________________________________________________%
 %                          |          |                                                                                  %
 %        iterTimes         | interger | 实际迭代次数。                                                                   %
@@ -53,16 +61,19 @@ function [errCode, iterTimes, N, U, fy, S] = pf(srcFilePath, options, hCallback)
 %========================================================================================================================%
 
 %% 初始化。
-    % 复位错误代码。
-    errCode = 0;
     % 读取源数据文件并构造所需数据结构。
-    [Y, P, QAndU2, BLVoltage, U, N, BLNodes, PQNodes, PVNodes, precision, maxIterTimes] = pf_mock_ieee1047();
-    % 检查是否所有源数据特性均受当前版本支持。
-    if (~pf_validate(Y, P, QAndU2, U, N, BLNodes, PQNodes, PVNodes, precision, maxIterTimes))
-        errCode = 2; return;
+    % 并设置迭代变量初值。
+    [err,fe,Y, P, QAndU2, BLVoltage, U, N, BLNodes, PQNodes, PVNodes, precision, maxIterTimes] = pf_build_data_structure(srcFilePath);
+    if(isstruct(err))
+        iterTimes=0;N=0;U=0;fy=0;S=0;
+        return;
     end
-    % 设置迭代变量初值。
-    fe = pf_set_init_values(N, 1.0000, U, BLVoltage, PQNodes, PVNodes, BLNodes);
+    % 检查是否所有源数据特性均受当前版本支持。
+    err = pf_validate(Y, P, QAndU2, U, N, BLNodes, PQNodes, PVNodes, precision, maxIterTimes);
+    if(isstruct(err))
+        iterTimes=0;N=0;U=0;fy=0;S=0;
+        return;
+    end
 
 %% 迭代。
     % 使用迭代计数器。
@@ -70,18 +81,29 @@ function [errCode, iterTimes, N, U, fy, S] = pf(srcFilePath, options, hCallback)
     while (1)
         iterTimes = iterTimes + 1;
         
-        % 若迭代次数超出指定最大值，返回错误（1）。
+        % 若迭代次数超出指定最大值，返回错误。
         if(iterTimes > maxIterTimes)
-            errCode = 1; return;
+            iterTimes=0;N=0;U=0;fy=0;S=0;
+            err = common_err(1, mfilename(),'DOES NOT converge after specified MAX iterations: %d.', maxIterTimes); return;
         end
         
+        % 若定义了前回调函数，发送通知。
+        if(class(hCallbackBeforePerIteration) == 'function_handle')
+            hCallbackBeforePerIteration(iterTimes);
+        end
+
         % 构造雅各比矩阵。
         J       = pf_build_jacobi_matrix(N, PQNodes, PVNodes, BLNodes, P, QAndU2, Y, fe);
         % 计算不平衡量。
         deltaPQ = pf_calc_delta(N, PQNodes, PVNodes, BLNodes, P, QAndU2, Y, fe);
         % 求解修正方程组。
         deltafe = J\deltaPQ;
-        
+
+        % 若定义了后回调函数，发送通知。
+        if(class(hCallbackAfterPerIteration) == 'function_handle')
+            hCallbackAfterPerIteration(iterTimes);
+        end
+
         % 若满足收敛条件，结束迭代。
         if(common_all_near_zero(deltafe, precision))
             break;
@@ -92,10 +114,7 @@ function [errCode, iterTimes, N, U, fy, S] = pf(srcFilePath, options, hCallback)
         % 更新迭代变量。
         fe = fe + mu*deltafe;
 
-        % 若定义了回调函数，发送通知。
-        if(hCallback)
-            hCallback(iterTimes);
-        end
+
     end
 
     % 计算节点功率和电压。

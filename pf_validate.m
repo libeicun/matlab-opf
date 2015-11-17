@@ -11,9 +11,19 @@
 %  若需要将其用于商业软件的开发，请首先联系所有者以取得许可。                                                            %
 %========================================================================================================================%
 
-function isValid = pf_validate(Y,P,Q,U2,N,BLNodes,PQNodes,PVNodes,precision,maxIterTimes)
-isValid = 1;
-if (size(BLNodes)~=[1,1])
-    isValid = 0;
+function [err] = pf_validate(Y,P,Q,U2,N,BLNodes,PQNodes,PVNodes,precision,maxIterTimes)
+err = [];
+t = size(BLNodes);
+if (t(1)~=1)
+    err = common_err(1,mfilename(), 'Multi-balance-nodes is NOT supported yet: %d balance nodes found.', t(1));
+    return;
+end
+
+t = size(U2);
+for i = 1:t(1)
+    if(U2(i)>1.5)
+        err = common_err(5, mfilename(), 'A voltage value seems NOT valid: node - %d, V - %f.', i, U2(i));
+        return;
+    end
 end
 

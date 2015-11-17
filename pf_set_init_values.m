@@ -16,7 +16,12 @@ fe(1:N,:) = zeros(N,PQInit);
 fe(N+1:N+N,:) = ones(N,PQInit);
 fe = fe.*1.00;
 
-fe(N+BLNodes(1,1)) = BLNodeVoltage;
+blSize = size(BLNodes);
+
+for i = 1:blSize(1)
+    fe(N+BLNodes(i,1)) = BLNodeVoltage(i,1);
+end
+
 PVNbr = size(PVNodes);
 for i = 1:PVNbr(1)
     index = PVNodes(i);
