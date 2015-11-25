@@ -11,7 +11,7 @@
 %  若需要将其用于商业软件的开发，请首先联系所有者以取得许可。                                                            %
 %========================================================================================================================%
 
-function [err, iterTimes, N, U, fy, S] = pf(srcFilePath, options, hCallbackBeforePerIteration, hCallbackAfterPerIteration)
+function [err, iterTimes, N, U, fy, S] = pf(srcFilePath, options, hCallbackBeforeInitialize, hCallbackBeforeIterations, hCallbackBeforePerIteration, hCallbackAfterPerIteration, hCallbackWhenFinished)
     
 %========================================================================================================================%    
 %                                                                                                                        %
@@ -63,6 +63,9 @@ function [err, iterTimes, N, U, fy, S] = pf(srcFilePath, options, hCallbackBefor
 %% 初始化。
     % 读取源数据文件并构造所需数据结构。
     % 并设置迭代变量初值。
+    if(class(hCallbackBeforeInitialize) == 'function_handle')
+        hCallbackBeforeInitialize(srcFilePath, options);
+    end
     [err,fe,Y, P, QAndU2, BLVoltage, U, N, BLNodes, PQNodes, PVNodes, precision, maxIterTimes] = pf_build_data_structure(srcFilePath);
     if(isstruct(err))
         iterTimes=0;N=0;U=0;fy=0;S=0;
@@ -73,6 +76,9 @@ function [err, iterTimes, N, U, fy, S] = pf(srcFilePath, options, hCallbackBefor
     if(isstruct(err))
         iterTimes=0;N=0;U=0;fy=0;S=0;
         return;
+    end
+    if(class(hCallbackBeforeIterations) == 'function_handle')
+        hCallbackBeforeIterations();
     end
 
 %% 迭代。
@@ -93,11 +99,11 @@ function [err, iterTimes, N, U, fy, S] = pf(srcFilePath, options, hCallbackBefor
         end
 
         % 构造雅各比矩阵。
-        J       = pf_build_jacobi_matrix(N, PQNodes, PVNodes, BLNodes, P, QAndU2, Y, fe);
+        % J       = pf_build_jacobi_matrix(N, PQNodes, PVNodes, BLNodes, P, QAndU2, Y, fe);
         % 计算不平衡量。
-        deltaPQ = pf_calc_delta(N, PQNodes, PVNodes, BLNodes, P, QAndU2, Y, fe);
+        [deltaPQ, J] = pf_calc_delta(N, PQNodes, PVNodes, BLNodes, P, QAndU2, Y, fe);
         % 求解修正方程组。
-        deltafe = J\deltaPQ;
+        deltafe = sparse(J\deltaPQ);
 
         % 若定义了后回调函数，发送通知。
         if(class(hCallbackAfterPerIteration) == 'function_handle')
@@ -119,6 +125,12 @@ function [err, iterTimes, N, U, fy, S] = pf(srcFilePath, options, hCallbackBefor
 
     % 计算节点功率和电压。
     [U, fy, S, u, l] = pf_build_node_datas(fe, Y, N);
+
+    if(class(hCallbackWhenFinished) == 'function_handle')
+        hCallbackWhenFinished();
+    end    
+
+
 
 end
 

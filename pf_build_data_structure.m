@@ -146,7 +146,7 @@ function [err,initialFe,Y,P,QAndU2,BLVoltages,U,N,BLNodes,PQNodes,PVNodes,precis
         B(nodeNoj, nodeNoj) = B(nodeNoj, nodeNoj) + bij;
 
     end
-    Y = G + B*j;
+    Y = sparse(G) + sparse(B)*j;
 
 %% Build vector P, QAndU2, BLNodes, PVNodes, PQNodes, BLVoltages.
     
@@ -202,7 +202,7 @@ function [err,initialFe,Y,P,QAndU2,BLVoltages,U,N,BLNodes,PQNodes,PVNodes,precis
     QAndU2      = QAndU2';
     U           = U';
 
-    initialFe = pf_set_init_values(N,1.0000,U,BLVoltages,PQNodes,PVNodes,BLNodes);
+    initialFe   = sparse(pf_set_init_values(N,1.0000,U,BLVoltages,PQNodes,PVNodes,BLNodes));
 
 end
 
