@@ -11,7 +11,7 @@
 %  若需要将其用于商业软件的开发，请首先联系所有者以取得许可。                                                            %
 %========================================================================================================================%
 
-function [err,initialFe,Y,P,QAndU2,BLVoltages,U,N,BLNodes,PQNodes,PVNodes,precision,maxIterTimes] = pf_build_data_structure(srcFilePath)
+function [err,initialFe,Y,P,QAndU2,BLVoltages,U,N,BLNodes,PQNodes, PVNodes, QLimits, precision,maxIterTimes] = pf_build_data_structure(srcFilePath)
 
 %========================================================================================================================%    
 %                                                                                                                        %
@@ -69,7 +69,7 @@ function [err,initialFe,Y,P,QAndU2,BLVoltages,U,N,BLNodes,PQNodes,PVNodes,precis
                                     = pf_read_src_ipso(srcFilePath);
 
     if(isstruct(err))
-        initialFe = 0;Y=0;P=0;QAndU2=0;BLVoltages=0;U=0;N=0;BLNodes=0;PQNodes=0;PVNodes=0;precision=0;maxIterTimes=0;
+        initialFe = 0;Y=0;P=0;QAndU2=0;BLVoltages=0;U=0;N=0;BLNodes=0;PQNodes=0;PVNodes=0;precision=0;maxIterTimes=0;QLimits=0;
         return;
     end
 
@@ -154,6 +154,7 @@ function [err,initialFe,Y,P,QAndU2,BLVoltages,U,N,BLNodes,PQNodes,PVNodes,precis
     BLVoltages = [];
     PQNodes = [];
     PVNodes = [];
+   
 
     P       = [];
     QAndU2  = [];
@@ -163,6 +164,8 @@ function [err,initialFe,Y,P,QAndU2,BLVoltages,U,N,BLNodes,PQNodes,PVNodes,precis
         node                    = nodeParams(i);
         P(node.nodeNo)          = (node.Pg - node.Pl)/baseCapacity;
         QAndU2(node.nodeNo)     = (node.Qg - node.Ql)/baseCapacity; 
+        QMax(node.nodeNo)       = (node.Qg - node.Ql)/baseCapacity; 
+        QMin(node.nodeNo)       = (node.Qg - node.Ql)/baseCapacity; 
     end
 
     for i = 1:sizeOfpvAndBlNodeParams
@@ -172,9 +175,13 @@ function [err,initialFe,Y,P,QAndU2,BLVoltages,U,N,BLNodes,PQNodes,PVNodes,precis
             PVNodes(pvNodeNbr)      = node.nodeNo;
             U(pvNodeNbr)            = node.u;
             QAndU2(node.nodeNo)     = (node.u)*(node.u);
+            QMax(node.nodeNo)       = node.QMax/baseCapacity;
+            QMin(node.nodeNo)       = node.QMin/baseCapacity;
         else
             blNodeNbr               = blNodeNbr + 1;
             BLVoltages(blNodeNbr)   = node.u;
+            QMax(node.nodeNo)       = node.QMax/baseCapacity;
+            QMin(node.nodeNo)       = node.QMin/baseCapacity;
         end
     end
 
@@ -201,6 +208,9 @@ function [err,initialFe,Y,P,QAndU2,BLVoltages,U,N,BLNodes,PQNodes,PVNodes,precis
     P           = P';
     QAndU2      = QAndU2';
     U           = U';
+    QMin        = QMin';
+    QMax        = QMax';
+    QLimits     = [QMin,QMax];
 
     initialFe   = sparse(pf_set_init_values(N,1.0000,U,BLVoltages,PQNodes,PVNodes,BLNodes));
 

@@ -27,6 +27,7 @@ P = diag(e)*tmp1 + diag(f)*tmp2;
 Q = diag(f)*tmp1 - diag(e)*tmp2;
 
 S = P + Q*i;
+t = angle(S);
 
 UExceedUprNodes = zeros(N,1);
 UExceedLwrNodes = zeros(N,1);

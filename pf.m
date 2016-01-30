@@ -11,7 +11,7 @@
 %  若需要将其用于商业软件的开发，请首先联系所有者以取得许可。                                                            %
 %========================================================================================================================%
 
-function [err, iterTimes, N, U, fy, S] = pf(srcFilePath, options, hCallbackBeforeInitialize, hCallbackBeforeIterations, hCallbackBeforePerIteration, hCallbackAfterPerIteration, hCallbackWhenFinished)
+function [err, iterTimes, N, U, fy, S, QLimits] = pf(srcFilePath, options, hCallbackBeforeInitialize, hCallbackBeforeIterations, hCallbackBeforePerIteration, hCallbackAfterPerIteration, hCallbackWhenFinished)
     
 %========================================================================================================================%    
 %                                                                                                                        %
@@ -66,7 +66,7 @@ function [err, iterTimes, N, U, fy, S] = pf(srcFilePath, options, hCallbackBefor
     if(class(hCallbackBeforeInitialize) == 'function_handle')
         hCallbackBeforeInitialize(srcFilePath, options);
     end
-    [err,fe,Y, P, QAndU2, BLVoltage, U, N, BLNodes, PQNodes, PVNodes, precision, maxIterTimes] = pf_build_data_structure(srcFilePath);
+    [err,fe,Y, P, QAndU2, BLVoltage, U, N, BLNodes, PQNodes, PVNodes, QLimits, precision, maxIterTimes] = pf_build_data_structure(srcFilePath);
     if(isstruct(err))
         iterTimes=0;N=0;U=0;fy=0;S=0;
         return;
@@ -98,16 +98,16 @@ function [err, iterTimes, N, U, fy, S] = pf(srcFilePath, options, hCallbackBefor
             hCallbackBeforePerIteration(iterTimes);
         end
 
-        % 构造雅各比矩阵。
-        % J       = pf_build_jacobi_matrix(N, PQNodes, PVNodes, BLNodes, P, QAndU2, Y, fe);
+       
         % 计算不平衡量。
-        [deltaPQ, J] = pf_calc_delta(N, PQNodes, PVNodes, BLNodes, P, QAndU2, Y, fe);
+        % 构造雅各比矩阵。
+        [deltaPQ, J] = pf_calc_delta_and_jacobi(N, PQNodes, PVNodes, BLNodes, P, QAndU2, Y, fe);
         % 求解修正方程组。
         deltafe = sparse(J\deltaPQ);
 
         % 若定义了后回调函数，发送通知。
         if(class(hCallbackAfterPerIteration) == 'function_handle')
-            hCallbackAfterPerIteration(iterTimes);
+            hCallbackAfterPerIteration(iterTimes, J, deltafe, deltaPQ);
         end
 
         % 若满足收敛条件，结束迭代。
